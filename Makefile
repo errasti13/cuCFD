@@ -1,9 +1,30 @@
 # Compiler and flags
 FC = nvfortran
-FCFLAGS = -mp=gpu -cuda -Mpreprocess
+
+# Configurable options
+USE_GPU ?= yes
+GPU_ARCH ?= cc75 # Default GPU architecture
+
+# Base Flags (Common)
+BASE_FFLAGS = -Mpreprocess
 OPTFLAGS = -O3 -fast -Mvect
 DEBUG_FLAGS = -g -O0 -Minfo=all -Mbounds -Mtrace
-RELEASE_FLAGS = $(OPTFLAGS) -Minfo=accel
+RELEASE_FLAGS = $(OPTFLAGS) -Minfo=accel # Keep accel info for release builds for now
+
+# Conditional Flags
+ifeq ($(USE_GPU), yes)
+    GPU_FFLAGS := $(BASE_FFLAGS) -mp=gpu -cuda -gpu=$(GPU_ARCH)
+    GPU_LDFLAGS := -gpu=$(GPU_ARCH)
+    FINAL_FFLAGS := $(GPU_FFLAGS)
+    FINAL_LDFLAGS := $(GPU_LDFLAGS)
+    BUILD_MODE_MSG := "Building for GPU (arch: $(GPU_ARCH))"
+else
+    CPU_FFLAGS := $(BASE_FFLAGS) # Add CPU-specific flags like -mp=multicore if desired later
+    CPU_LDFLAGS := # Add CPU-specific linker flags if needed later
+    FINAL_FFLAGS := $(CPU_FFLAGS)
+    FINAL_LDFLAGS := $(CPU_LDFLAGS)
+    BUILD_MODE_MSG := "Building for CPU"
+endif
 
 # Directories
 SRCDIR = src
@@ -17,9 +38,6 @@ BENCHMARKSDIR = $(SRCDIR)/benchmarks
 BUILDDIR = build
 BINDIR = bin
 MODDIR = $(BUILDDIR)/modules
-
-# Default GPU architecture (Tesla - cc75)
-GPU_ARCH = cc75
 
 # Sources
 CORE_SRCS = $(wildcard $(COREDIR)/*.f90)
@@ -44,33 +62,40 @@ MAIN_OBJ = $(MAIN_SRC:$(SRCDIR)/%.f90=$(BUILDDIR)/%.o)
 # All objects
 OBJS = $(CORE_OBJS) $(NUMERICS_OBJS) $(MODELS_OBJS) $(IO_OBJS) $(TESTS_OBJS) $(UTILS_OBJS) $(MAIN_OBJ)
 
-# Benchmark objects
-BENCHMARK_OBJS = $(BENCHMARKS_OBJS)
+# Benchmark objects (Assuming these might also be conditional later?)
+BENCHMARK_ALL_OBJS = $(CORE_OBJS) $(NUMERICS_OBJS) $(MODELS_OBJS) $(IO_OBJS) $(UTILS_OBJS) $(BENCHMARKS_OBJS)
 
 # Targets
-.PHONY: all debug release clean tesla volta ampere turing benchmarks setup
+.PHONY: all debug release clean tesla volta ampere turing benchmarks setup build_info
 
 # Module directory handling
 $(shell mkdir -p $(BINDIR) $(BUILDDIR) $(MODDIR))
 
-all: setup $(BINDIR)/cuCFD
+all: setup build_info $(BINDIR)/cuCFD
 
-benchmarks: setup $(BINDIR)/benchmark
+benchmarks: setup build_info $(BINDIR)/benchmark
 
-debug: FCFLAGS += $(DEBUG_FLAGS)
+# Modify debug/release to append to FINAL_FFLAGS
+debug: FINAL_FFLAGS += $(DEBUG_FLAGS)
 debug: all
 
-release: FCFLAGS += $(RELEASE_FLAGS)
+release: FINAL_FFLAGS += $(RELEASE_FLAGS)
 release: all
 
 setup:
 	@mkdir -p $(BINDIR) $(BUILDDIR) $(MODDIR)
 
-$(BINDIR)/cuCFD: $(OBJS)
-	$(FC) $(FCFLAGS) -gpu=$(GPU_ARCH) -module $(MODDIR) -o $@ $^
+build_info:
+	@echo $(BUILD_MODE_MSG)
 
-$(BINDIR)/benchmark: $(BENCHMARK_OBJS)
-	$(FC) $(FCFLAGS) -gpu=$(GPU_ARCH) -module $(MODDIR) -o $@ $^
+# Use FINAL_FFLAGS and FINAL_LDFLAGS for linking
+$(BINDIR)/cuCFD: $(OBJS)
+	$(FC) $(FINAL_FFLAGS) $(FINAL_LDFLAGS) -module $(MODDIR) -o $@ $^
+
+# Use FINAL_FFLAGS and FINAL_LDFLAGS for benchmark linking
+# Link benchmark against all necessary objects
+$(BINDIR)/benchmark: $(BENCHMARK_ALL_OBJS)
+	$(FC) $(FINAL_FFLAGS) $(FINAL_LDFLAGS) -module $(MODDIR) -o $@ $^
 
 # Module dependencies - needed for proper build order
 # Define specific dependencies for modules
@@ -80,40 +105,43 @@ $(BUILDDIR)/diffusion.o: $(BUILDDIR)/mesh.o $(BUILDDIR)/field.o
 $(MAIN_OBJ): $(BUILDDIR)/mesh.o $(BUILDDIR)/field.o $(BUILDDIR)/boundary.o $(BUILDDIR)/diffusion.o
 $(BUILDDIR)/lid_driven_cavity.o: $(BUILDDIR)/mesh.o $(BUILDDIR)/field.o $(BUILDDIR)/boundary.o
 
+# Use FINAL_FFLAGS for compilation rules
 # Core module rules
 $(BUILDDIR)/%.o: $(COREDIR)/%.f90
-	$(FC) $(FCFLAGS) -gpu=$(GPU_ARCH) -module $(MODDIR) -c $< -o $@
+	$(FC) $(FINAL_FFLAGS) -module $(MODDIR) -c $< -o $@
 
 # Numerics module rules
 $(BUILDDIR)/%.o: $(NUMERICSDIR)/%.f90
-	$(FC) $(FCFLAGS) -gpu=$(GPU_ARCH) -module $(MODDIR) -c $< -o $@
+	$(FC) $(FINAL_FFLAGS) -module $(MODDIR) -c $< -o $@
 
 # Models module rules
 $(BUILDDIR)/%.o: $(MODELSDIR)/%.f90
-	$(FC) $(FCFLAGS) -gpu=$(GPU_ARCH) -module $(MODDIR) -c $< -o $@
+	$(FC) $(FINAL_FFLAGS) -module $(MODDIR) -c $< -o $@
 
 # IO module rules
 $(BUILDDIR)/%.o: $(IODIR)/%.f90
-	$(FC) $(FCFLAGS) -gpu=$(GPU_ARCH) -module $(MODDIR) -c $< -o $@
+	$(FC) $(FINAL_FFLAGS) -module $(MODDIR) -c $< -o $@
 
 # Tests module rules
 $(BUILDDIR)/%.o: $(TESTSDIR)/%.f90
-	$(FC) $(FCFLAGS) -gpu=$(GPU_ARCH) -module $(MODDIR) -c $< -o $@
+	$(FC) $(FINAL_FFLAGS) -module $(MODDIR) -c $< -o $@
 
 # Utils module rules
 $(BUILDDIR)/%.o: $(UTILSDIR)/%.f90
-	$(FC) $(FCFLAGS) -gpu=$(GPU_ARCH) -module $(MODDIR) -c $< -o $@
+	$(FC) $(FINAL_FFLAGS) -module $(MODDIR) -c $< -o $@
 
 # Benchmarks module rules
 $(BUILDDIR)/%.o: $(BENCHMARKSDIR)/%.f90
-	$(FC) $(FCFLAGS) -gpu=$(GPU_ARCH) -module $(MODDIR) -c $< -o $@
+	$(FC) $(FINAL_FFLAGS) -module $(MODDIR) -c $< -o $@
 
 # Main program rule
 $(BUILDDIR)/%.o: $(SRCDIR)/%.f90
-	$(FC) $(FCFLAGS) -gpu=$(GPU_ARCH) -module $(MODDIR) -c $< -o $@
+	$(FC) $(FINAL_FFLAGS) -module $(MODDIR) -c $< -o $@
 
 # GPU architecture targets
-turing: GPU_ARCH = cc75 
+# These still function by setting GPU_ARCH and implicitly calling 'all'
+# The conditional logic will pick up the correct GPU_ARCH if USE_GPU=yes
+turing: GPU_ARCH = cc75
 turing: all
 
 tesla: GPU_ARCH = cc75
@@ -122,7 +150,7 @@ tesla: all
 volta: GPU_ARCH = cc70
 volta: all
 
-ampere: GPU_ARCH = cc80 
+ampere: GPU_ARCH = cc80
 ampere: all
 
 clean:
