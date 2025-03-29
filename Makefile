@@ -11,7 +11,7 @@ BUILDDIR = build
 BINDIR = bin
 MODDIR = $(BUILDDIR)/modules
 
-# Default GPU architecture (Tesla)
+# Default GPU architecture (Turing - GTX 1650)
 GPU_ARCH = cc75
 
 # Sources and objects
@@ -40,16 +40,19 @@ $(BUILDDIR)/%.o: $(SRCDIR)/%.f90
 	$(FC) $(FCFLAGS) -gpu=$(GPU_ARCH) -module $(MODDIR) -c $< -o $@
 
 # GPU architecture targets
+turing: GPU_ARCH = cc75 
+turing: all
+
 tesla: GPU_ARCH = cc75
 tesla: all
 
 volta: GPU_ARCH = cc70
 volta: all
 
-ampere: GPU_ARCH = cc80
+ampere: GPU_ARCH = cc80 
 ampere: all
 
 clean:
 	rm -rf $(BUILDDIR) $(BINDIR)
 
-.PHONY: all debug release clean tesla volta ampere setup
+.PHONY: all debug release clean tesla volta ampere turing setup
