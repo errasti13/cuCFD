@@ -8,18 +8,21 @@ GPU_ARCH ?= cc75 # Default GPU architecture
 # Base Flags (Common)
 BASE_FFLAGS = -Mpreprocess
 OPTFLAGS = -O3 -fast -Mvect
-DEBUG_FLAGS = -g -O0 -Minfo=all -Mbounds -Mtrace
+DEBUG_FLAGS = -g -O0 -Minfo=all -Mbounds -traceback -Mchkptr -Mchkstk -Mdclchk
 RELEASE_FLAGS = $(OPTFLAGS) -Minfo=accel # Keep accel info for release builds for now
+
+# Module availability flags for preprocessor
+MODULE_FLAGS = -DHAVE_DIFFUSION -DHAVE_INCOMPRESSIBLE_FLOW
 
 # Conditional Flags
 ifeq ($(USE_GPU), yes)
-    GPU_FFLAGS := $(BASE_FFLAGS) -mp=gpu -cuda -gpu=$(GPU_ARCH)
+    GPU_FFLAGS := $(BASE_FFLAGS) $(MODULE_FLAGS) -mp=gpu -cuda -gpu=$(GPU_ARCH)
     GPU_LDFLAGS := -gpu=$(GPU_ARCH)
     FINAL_FFLAGS := $(GPU_FFLAGS)
     FINAL_LDFLAGS := $(GPU_LDFLAGS)
     BUILD_MODE_MSG := "Building for GPU (arch: $(GPU_ARCH))"
 else
-    CPU_FFLAGS := $(BASE_FFLAGS) # Add CPU-specific flags like -mp=multicore if desired later
+    CPU_FFLAGS := $(BASE_FFLAGS) $(MODULE_FLAGS) # Add CPU-specific flags like -mp=multicore if desired later
     CPU_LDFLAGS := # Add CPU-specific linker flags if needed later
     FINAL_FFLAGS := $(CPU_FFLAGS)
     FINAL_LDFLAGS := $(CPU_LDFLAGS)
@@ -43,7 +46,9 @@ MODDIR = $(BUILDDIR)/modules
 CORE_SRCS = $(wildcard $(COREDIR)/*.f90)
 NUMERICS_SRCS = $(wildcard $(NUMERICSDIR)/*.f90)
 MODELS_SRCS = $(wildcard $(MODELSDIR)/*.f90)
-IO_SRCS = $(wildcard $(IODIR)/*.f90)
+CONVERTER_SRC = $(SRCDIR)/io/solution_converter.f90
+# Filter out solution_converter.f90 from IO_SRCS
+IO_SRCS = $(filter-out $(CONVERTER_SRC),$(wildcard $(IODIR)/*.f90))
 TESTS_SRCS = $(wildcard $(TESTSDIR)/*.f90)
 UTILS_SRCS = $(wildcard $(UTILSDIR)/*.f90)
 BENCHMARKS_SRCS = $(wildcard $(BENCHMARKSDIR)/*.f90)
@@ -58,22 +63,29 @@ TESTS_OBJS = $(TESTS_SRCS:$(TESTSDIR)/%.f90=$(BUILDDIR)/%.o)
 UTILS_OBJS = $(UTILS_SRCS:$(UTILSDIR)/%.f90=$(BUILDDIR)/%.o)
 BENCHMARKS_OBJS = $(BENCHMARKS_SRCS:$(BENCHMARKSDIR)/%.f90=$(BUILDDIR)/%.o)
 MAIN_OBJ = $(MAIN_SRC:$(SRCDIR)/%.f90=$(BUILDDIR)/%.o)
+CONVERTER_OBJ = $(CONVERTER_SRC:$(IODIR)/%.f90=$(BUILDDIR)/%.o)
 
 # All objects
 OBJS = $(CORE_OBJS) $(NUMERICS_OBJS) $(MODELS_OBJS) $(IO_OBJS) $(TESTS_OBJS) $(UTILS_OBJS) $(MAIN_OBJ)
+
+# Objects for converter
+CONVERTER_ALL_OBJS = $(CORE_OBJS) $(NUMERICS_OBJS) $(MODELS_OBJS) $(IO_OBJS) $(UTILS_OBJS) $(CONVERTER_OBJ)
 
 # Benchmark objects (Assuming these might also be conditional later?)
 BENCHMARK_ALL_OBJS = $(CORE_OBJS) $(NUMERICS_OBJS) $(MODELS_OBJS) $(IO_OBJS) $(UTILS_OBJS) $(BENCHMARKS_OBJS)
 
 # Targets
-.PHONY: all debug release clean tesla volta ampere turing benchmarks setup build_info
+.PHONY: all debug release clean tesla volta ampere turing benchmarks setup build_info converter
 
 # Module directory handling
 $(shell mkdir -p $(BINDIR) $(BUILDDIR) $(MODDIR))
 
-all: setup build_info $(BINDIR)/cuCFD
+all: setup build_info $(BINDIR)/cuCFD $(BINDIR)/solution_converter
 
 benchmarks: setup build_info $(BINDIR)/benchmark
+
+# Add converter target
+converter: setup build_info $(BINDIR)/solution_converter
 
 # Modify debug/release to append to FINAL_FFLAGS
 debug: FINAL_FFLAGS += $(DEBUG_FLAGS)
@@ -92,6 +104,10 @@ build_info:
 $(BINDIR)/cuCFD: $(OBJS)
 	$(FC) $(FINAL_FFLAGS) $(FINAL_LDFLAGS) -module $(MODDIR) -o $@ $^
 
+# Use FINAL_FFLAGS and FINAL_LDFLAGS for solution converter
+$(BINDIR)/solution_converter: $(CONVERTER_ALL_OBJS)
+	$(FC) $(FINAL_FFLAGS) $(FINAL_LDFLAGS) -module $(MODDIR) -o $@ $^
+
 # Use FINAL_FFLAGS and FINAL_LDFLAGS for benchmark linking
 # Link benchmark against all necessary objects
 $(BINDIR)/benchmark: $(BENCHMARK_ALL_OBJS)
@@ -102,8 +118,11 @@ $(BINDIR)/benchmark: $(BENCHMARK_ALL_OBJS)
 $(BUILDDIR)/field.o: $(BUILDDIR)/mesh.o
 $(BUILDDIR)/boundary.o: $(BUILDDIR)/mesh.o $(BUILDDIR)/field.o
 $(BUILDDIR)/diffusion.o: $(BUILDDIR)/mesh.o $(BUILDDIR)/field.o
-$(MAIN_OBJ): $(BUILDDIR)/mesh.o $(BUILDDIR)/field.o $(BUILDDIR)/boundary.o $(BUILDDIR)/diffusion.o
-$(BUILDDIR)/lid_driven_cavity.o: $(BUILDDIR)/mesh.o $(BUILDDIR)/field.o $(BUILDDIR)/boundary.o
+$(BUILDDIR)/incompressible_flow.o: $(BUILDDIR)/mesh.o $(BUILDDIR)/field.o $(BUILDDIR)/boundary.o
+$(BUILDDIR)/config_parser.o: $(BUILDDIR)/mesh.o
+$(BUILDDIR)/solution_io.o: $(BUILDDIR)/mesh.o $(BUILDDIR)/field.o
+$(BUILDDIR)/solver_manager.o: $(BUILDDIR)/mesh.o $(BUILDDIR)/field.o $(BUILDDIR)/boundary.o $(BUILDDIR)/config_parser.o $(BUILDDIR)/diffusion.o $(BUILDDIR)/incompressible_flow.o $(BUILDDIR)/solution_io.o
+$(MAIN_OBJ): $(BUILDDIR)/mesh.o $(BUILDDIR)/field.o $(BUILDDIR)/config_parser.o $(BUILDDIR)/solver_manager.o $(BUILDDIR)/solution_io.o
 
 # Use FINAL_FFLAGS for compilation rules
 # Core module rules
