@@ -79,6 +79,7 @@ module solver_manager
         procedure :: advance => solver_manager_advance
         procedure :: write_solution => solver_manager_write_solution
         procedure :: cleanup => solver_manager_cleanup
+        procedure :: setup_residual_tracking => solver_manager_setup_residual_tracking
     end type solver_manager_t
     
 contains
@@ -293,108 +294,107 @@ contains
             
             ! Get boundary conditions section
             call config%get_section("boundary_conditions", bc_section)
+            
+            ! Loop through the walls (north, south, east, west, etc.)
+            do i = 1, bc_section%num_subsections
+                wall_name = bc_section%subsections(i)%name
+                bc_type = ""
+                velocity = [0.0_WP, 0.0_WP, 0.0_WP]
                 
-                ! Loop through the walls (north, south, east, west, etc.)
-                do i = 1, bc_section%num_subsections
-                    wall_name = bc_section%subsections(i)%name
-                    bc_type = ""
-                    velocity = [0.0_WP, 0.0_WP, 0.0_WP]
+                ! Get properties for this wall
+                do j = 1, bc_section%subsections(i)%num_items
                     
-                    ! Get properties for this wall
-                    do j = 1, bc_section%subsections(i)%num_items
-                        
-                        if (trim(bc_section%subsections(i)%keys(j)) == "type") then
-                            bc_type = trim(bc_section%subsections(i)%values(j))
-                        end if
-                        
-                        if (trim(bc_section%subsections(i)%keys(j)) == "velocity") then
-                            velocity_str = trim(bc_section%subsections(i)%values(j))
-                            ! Parse velocity string like [1.0, 0.0, 0.0]
-                            read(velocity_str(2:len_trim(velocity_str)-1), *) velocity
-                        end if
-                    end do
+                    if (trim(bc_section%subsections(i)%keys(j)) == "type") then
+                        bc_type = trim(bc_section%subsections(i)%values(j))
+                    end if
                     
-                    ! Map wall name to index
-                    if (trim(wall_name) == "north") then
-                        if (trim(bc_type) == "wall") then
-                            call this%bc_manager%add_bc("u", 4, BC_WALL, [velocity(1)])
-                            call this%bc_manager%add_bc("v", 4, BC_WALL, [velocity(2)])
-                            call this%bc_manager%add_bc("w", 4, BC_WALL, [velocity(3)])
-                            call this%bc_manager%add_bc("p", 4, BC_NEUMANN, [0.0_WP])
-                        else if (trim(bc_type) == "symmetry") then
-                            call this%bc_manager%add_bc("u", 4, BC_SYMMETRY, [0.0_WP])
-                            call this%bc_manager%add_bc("v", 4, BC_SYMMETRY, [0.0_WP])
-                            call this%bc_manager%add_bc("w", 4, BC_SYMMETRY, [0.0_WP])
-                            call this%bc_manager%add_bc("p", 4, BC_SYMMETRY, [0.0_WP])
-                        end if
-                    else if (trim(wall_name) == "south") then
-                        if (trim(bc_type) == "wall") then
-                            call this%bc_manager%add_bc("u", 3, BC_WALL, [velocity(1)])
-                            call this%bc_manager%add_bc("v", 3, BC_WALL, [velocity(2)])
-                            call this%bc_manager%add_bc("w", 3, BC_WALL, [velocity(3)])
-                            call this%bc_manager%add_bc("p", 3, BC_NEUMANN, [0.0_WP])
-                        else if (trim(bc_type) == "symmetry") then
-                            call this%bc_manager%add_bc("u", 3, BC_SYMMETRY, [0.0_WP])
-                            call this%bc_manager%add_bc("v", 3, BC_SYMMETRY, [0.0_WP])
-                            call this%bc_manager%add_bc("w", 3, BC_SYMMETRY, [0.0_WP])
-                            call this%bc_manager%add_bc("p", 3, BC_SYMMETRY, [0.0_WP])
-                        end if
-                    else if (trim(wall_name) == "east") then
-                        if (trim(bc_type) == "wall") then
-                            call this%bc_manager%add_bc("u", 2, BC_WALL, [velocity(1)])
-                            call this%bc_manager%add_bc("v", 2, BC_WALL, [velocity(2)])
-                            call this%bc_manager%add_bc("w", 2, BC_WALL, [velocity(3)])
-                            call this%bc_manager%add_bc("p", 2, BC_NEUMANN, [0.0_WP])
-                        else if (trim(bc_type) == "symmetry") then
-                            call this%bc_manager%add_bc("u", 2, BC_SYMMETRY, [0.0_WP])
-                            call this%bc_manager%add_bc("v", 2, BC_SYMMETRY, [0.0_WP])
-                            call this%bc_manager%add_bc("w", 2, BC_SYMMETRY, [0.0_WP])
-                            call this%bc_manager%add_bc("p", 2, BC_SYMMETRY, [0.0_WP])
-                        end if
-                    else if (trim(wall_name) == "west") then
-                        if (trim(bc_type) == "wall") then
-                            call this%bc_manager%add_bc("u", 1, BC_WALL, [velocity(1)])
-                            call this%bc_manager%add_bc("v", 1, BC_WALL, [velocity(2)])
-                            call this%bc_manager%add_bc("w", 1, BC_WALL, [velocity(3)])
-                            call this%bc_manager%add_bc("p", 1, BC_NEUMANN, [0.0_WP])
-                        else if (trim(bc_type) == "symmetry") then
-                            call this%bc_manager%add_bc("u", 1, BC_SYMMETRY, [0.0_WP])
-                            call this%bc_manager%add_bc("v", 1, BC_SYMMETRY, [0.0_WP])
-                            call this%bc_manager%add_bc("w", 1, BC_SYMMETRY, [0.0_WP])
-                            call this%bc_manager%add_bc("p", 1, BC_SYMMETRY, [0.0_WP])
-                        end if
-                    else if (trim(wall_name) == "top") then
-                        if (trim(bc_type) == "wall") then
-                            call this%bc_manager%add_bc("u", 6, BC_WALL, [velocity(1)])
-                            call this%bc_manager%add_bc("v", 6, BC_WALL, [velocity(2)])
-                            call this%bc_manager%add_bc("w", 6, BC_WALL, [velocity(3)])
-                            call this%bc_manager%add_bc("p", 6, BC_NEUMANN, [0.0_WP])
-                        else if (trim(bc_type) == "symmetry") then
-                            call this%bc_manager%add_bc("u", 6, BC_SYMMETRY, [0.0_WP])
-                            call this%bc_manager%add_bc("v", 6, BC_SYMMETRY, [0.0_WP])
-                            call this%bc_manager%add_bc("w", 6, BC_SYMMETRY, [0.0_WP])
-                            call this%bc_manager%add_bc("p", 6, BC_SYMMETRY, [0.0_WP])
-                        end if
-                    else if (trim(wall_name) == "bottom") then
-                        if (trim(bc_type) == "wall") then
-                            call this%bc_manager%add_bc("u", 5, BC_WALL, [velocity(1)])
-                            call this%bc_manager%add_bc("v", 5, BC_WALL, [velocity(2)])
-                            call this%bc_manager%add_bc("w", 5, BC_WALL, [velocity(3)])
-                            call this%bc_manager%add_bc("p", 5, BC_NEUMANN, [0.0_WP])
-                        else if (trim(bc_type) == "symmetry") then
-                            call this%bc_manager%add_bc("u", 5, BC_SYMMETRY, [0.0_WP])
-                            call this%bc_manager%add_bc("v", 5, BC_SYMMETRY, [0.0_WP])
-                            call this%bc_manager%add_bc("w", 5, BC_SYMMETRY, [0.0_WP])
-                            call this%bc_manager%add_bc("p", 5, BC_SYMMETRY, [0.0_WP])
-                        end if
+                    if (trim(bc_section%subsections(i)%keys(j)) == "velocity") then
+                        velocity_str = trim(bc_section%subsections(i)%values(j))
+                        ! Parse velocity string like [1.0, 0.0, 0.0]
+                        read(velocity_str(2:len_trim(velocity_str)-1), *) velocity
                     end if
                 end do
                 
-                print *, "Boundary conditions from config file applied successfully"
-                ! Clean up
-                call config%cleanup()
-                return
-            end if
+                ! Map wall name to index
+                if (trim(wall_name) == "north") then
+                    if (trim(bc_type) == "wall") then
+                        call this%bc_manager%add_bc("u", 4, BC_WALL, [velocity(1)])
+                        call this%bc_manager%add_bc("v", 4, BC_WALL, [velocity(2)])
+                        call this%bc_manager%add_bc("w", 4, BC_WALL, [velocity(3)])
+                        call this%bc_manager%add_bc("p", 4, BC_NEUMANN, [0.0_WP])
+                    else if (trim(bc_type) == "symmetry") then
+                        call this%bc_manager%add_bc("u", 4, BC_SYMMETRY, [0.0_WP])
+                        call this%bc_manager%add_bc("v", 4, BC_SYMMETRY, [0.0_WP])
+                        call this%bc_manager%add_bc("w", 4, BC_SYMMETRY, [0.0_WP])
+                        call this%bc_manager%add_bc("p", 4, BC_SYMMETRY, [0.0_WP])
+                    end if
+                else if (trim(wall_name) == "south") then
+                    if (trim(bc_type) == "wall") then
+                        call this%bc_manager%add_bc("u", 3, BC_WALL, [velocity(1)])
+                        call this%bc_manager%add_bc("v", 3, BC_WALL, [velocity(2)])
+                        call this%bc_manager%add_bc("w", 3, BC_WALL, [velocity(3)])
+                        call this%bc_manager%add_bc("p", 3, BC_NEUMANN, [0.0_WP])
+                    else if (trim(bc_type) == "symmetry") then
+                        call this%bc_manager%add_bc("u", 3, BC_SYMMETRY, [0.0_WP])
+                        call this%bc_manager%add_bc("v", 3, BC_SYMMETRY, [0.0_WP])
+                        call this%bc_manager%add_bc("w", 3, BC_SYMMETRY, [0.0_WP])
+                        call this%bc_manager%add_bc("p", 3, BC_SYMMETRY, [0.0_WP])
+                    end if
+                else if (trim(wall_name) == "east") then
+                    if (trim(bc_type) == "wall") then
+                        call this%bc_manager%add_bc("u", 2, BC_WALL, [velocity(1)])
+                        call this%bc_manager%add_bc("v", 2, BC_WALL, [velocity(2)])
+                        call this%bc_manager%add_bc("w", 2, BC_WALL, [velocity(3)])
+                        call this%bc_manager%add_bc("p", 2, BC_NEUMANN, [0.0_WP])
+                    else if (trim(bc_type) == "symmetry") then
+                        call this%bc_manager%add_bc("u", 2, BC_SYMMETRY, [0.0_WP])
+                        call this%bc_manager%add_bc("v", 2, BC_SYMMETRY, [0.0_WP])
+                        call this%bc_manager%add_bc("w", 2, BC_SYMMETRY, [0.0_WP])
+                        call this%bc_manager%add_bc("p", 2, BC_SYMMETRY, [0.0_WP])
+                    end if
+                else if (trim(wall_name) == "west") then
+                    if (trim(bc_type) == "wall") then
+                        call this%bc_manager%add_bc("u", 1, BC_WALL, [velocity(1)])
+                        call this%bc_manager%add_bc("v", 1, BC_WALL, [velocity(2)])
+                        call this%bc_manager%add_bc("w", 1, BC_WALL, [velocity(3)])
+                        call this%bc_manager%add_bc("p", 1, BC_NEUMANN, [0.0_WP])
+                    else if (trim(bc_type) == "symmetry") then
+                        call this%bc_manager%add_bc("u", 1, BC_SYMMETRY, [0.0_WP])
+                        call this%bc_manager%add_bc("v", 1, BC_SYMMETRY, [0.0_WP])
+                        call this%bc_manager%add_bc("w", 1, BC_SYMMETRY, [0.0_WP])
+                        call this%bc_manager%add_bc("p", 1, BC_SYMMETRY, [0.0_WP])
+                    end if
+                else if (trim(wall_name) == "top") then
+                    if (trim(bc_type) == "wall") then
+                        call this%bc_manager%add_bc("u", 6, BC_WALL, [velocity(1)])
+                        call this%bc_manager%add_bc("v", 6, BC_WALL, [velocity(2)])
+                        call this%bc_manager%add_bc("w", 6, BC_WALL, [velocity(3)])
+                        call this%bc_manager%add_bc("p", 6, BC_NEUMANN, [0.0_WP])
+                    else if (trim(bc_type) == "symmetry") then
+                        call this%bc_manager%add_bc("u", 6, BC_SYMMETRY, [0.0_WP])
+                        call this%bc_manager%add_bc("v", 6, BC_SYMMETRY, [0.0_WP])
+                        call this%bc_manager%add_bc("w", 6, BC_SYMMETRY, [0.0_WP])
+                        call this%bc_manager%add_bc("p", 6, BC_SYMMETRY, [0.0_WP])
+                    end if
+                else if (trim(wall_name) == "bottom") then
+                    if (trim(bc_type) == "wall") then
+                        call this%bc_manager%add_bc("u", 5, BC_WALL, [velocity(1)])
+                        call this%bc_manager%add_bc("v", 5, BC_WALL, [velocity(2)])
+                        call this%bc_manager%add_bc("w", 5, BC_WALL, [velocity(3)])
+                        call this%bc_manager%add_bc("p", 5, BC_NEUMANN, [0.0_WP])
+                    else if (trim(bc_type) == "symmetry") then
+                        call this%bc_manager%add_bc("u", 5, BC_SYMMETRY, [0.0_WP])
+                        call this%bc_manager%add_bc("v", 5, BC_SYMMETRY, [0.0_WP])
+                        call this%bc_manager%add_bc("w", 5, BC_SYMMETRY, [0.0_WP])
+                        call this%bc_manager%add_bc("p", 5, BC_SYMMETRY, [0.0_WP])
+                    end if
+                end if
+            end do
+            
+            print *, "Boundary conditions from config file applied successfully"
+            ! Clean up
+            call config%cleanup()
+            return
         end if
         
         ! If we get here, use default boundary conditions
@@ -546,7 +546,7 @@ contains
         print *, "Final max_iterations (based on end_time/dt): ", this%max_iterations
         
         ! Initialize residual tracking
-        call setup_residual_tracking(this)
+        call this%setup_residual_tracking()
         
         ! Initialize the appropriate solver based on type
         select case (this%solver_type)
@@ -588,7 +588,7 @@ contains
     end subroutine solver_manager_setup_solver
     
     !> Setup residual tracking based on solver type
-    subroutine setup_residual_tracking(this)
+    subroutine solver_manager_setup_residual_tracking(this)
         class(solver_manager_t), intent(inout) :: this
         integer :: num_residuals
         
@@ -631,7 +631,7 @@ contains
         end select
         
         print *, "Initialized residual tracking for", num_residuals, "equations"
-    end subroutine setup_residual_tracking
+    end subroutine solver_manager_setup_residual_tracking
     
     !> Advance solution by one time step
     subroutine solver_manager_advance(this)
