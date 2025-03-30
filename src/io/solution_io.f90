@@ -54,27 +54,19 @@ contains
         logical :: dir_exists
         integer :: stat
         
-        print *, "DEBUG: Creating directory if it doesn't exist: '", trim(dir_path), "'"
-        
         ! Check if directory exists
         inquire(file=trim(dir_path)//'/.', exist=dir_exists)
         
         ! Create directory if it doesn't exist
         if (.not. dir_exists) then
-            print *, "DEBUG: Directory does not exist, creating: ", trim(dir_path)
             ! Use system call for directory creation - platform dependent
-#ifdef _WIN32
-            call execute_command_line('mkdir "' // trim(dir_path) // '"', wait=.true., exitstat=stat)
-#else
             call execute_command_line('mkdir -p "' // trim(dir_path) // '"', wait=.true., exitstat=stat)
-#endif
+
             if (stat /= 0) then
                 print *, "Warning: Failed to create directory: ", trim(dir_path)
-            else
-                print *, "DEBUG: Directory created successfully: ", trim(dir_path)
             end if
         else
-            print *, "DEBUG: Directory already exists: ", trim(dir_path)
+            continue
         end if
     end subroutine solution_io_create_directory
     
@@ -89,8 +81,6 @@ contains
         character(len=256) :: filename, filepath, header_file
         character(len=256) :: clean_dir, clean_prefix
         logical :: dir_exists
-        
-        print *, "DEBUG: Attempting to write solution for iteration ", iteration
         
         ! Clean up the output directory string to remove quotes, comments, and line endings
         clean_dir = trim(adjustl(this%output_dir))
@@ -114,10 +104,16 @@ contains
             clean_dir = clean_dir(1:len_trim(clean_dir)-1)
         end do
         
-        clean_dir = trim(adjustl(clean_dir))
-        clean_prefix = trim(this%prefix)
+        ! Also clean the prefix (case name)
+        clean_prefix = trim(adjustl(this%prefix))
+        if (len_trim(clean_prefix) >= 2) then
+            if (clean_prefix(1:1) == '"' .and. clean_prefix(len_trim(clean_prefix):len_trim(clean_prefix)) == '"') then
+                clean_prefix = clean_prefix(2:len_trim(clean_prefix)-1)
+            end if
+        end if
         
-        print *, "DEBUG: Using cleaned output directory: '", trim(clean_dir), "'"
+        clean_dir = trim(adjustl(clean_dir))
+        clean_prefix = trim(adjustl(clean_prefix))
         
         ! Make sure the directory exists
         call this%create_directory(clean_dir)
@@ -128,8 +124,6 @@ contains
         
         ! Create header file path
         header_file = trim(clean_dir) // "/" // trim(clean_prefix) // "_" // trim(int2str(iteration)) // ".hdr"
-        
-        print *, "DEBUG: Header file path: '", trim(header_file), "'"
         
         ! Check if we can write to the directory
         inquire(file=trim(clean_dir)//'/.', exist=dir_exists)
@@ -147,15 +141,12 @@ contains
             return
         else
             close(unit_num, status='delete')
-            print *, "DEBUG: Write permission test passed for directory: ", trim(clean_dir)
         end if
         
         open(newunit=unit_num, file=trim(header_file), status='replace', action='write', iostat=ios)
         if (ios /= 0) then
             print *, "Error: Could not open header file for writing: ", trim(header_file), " (IOSTAT=", ios, ")"
             return
-        else
-            print *, "DEBUG: Opened header file: ", trim(header_file)
         end if
         
         ! Write header info
@@ -183,8 +174,6 @@ contains
         if (ios /= 0) then
             print *, "Error: Could not open solution file for writing: ", trim(filepath), " (IOSTAT=", ios, ")"
             return
-        else
-            print *, "DEBUG: Opened solution file: ", trim(filepath)
         end if
         
         ! Write file signature and version
@@ -208,7 +197,6 @@ contains
         do i = 1, size(fields)
             ! First check if field is on device, copy from device if needed
             if (fields(i)%on_device) then
-                print *, "DEBUG: Field ", trim(fields(i)%name), " is on device, should be copied first"
                 ! We need a non-const reference to the field to call copy_from_device
                 ! For now, let's assume fields are already copied from device if needed
                 ! In a real implementation, this would need a better solution
@@ -229,7 +217,6 @@ contains
         close(unit_num)
         
         print *, "Solution written to: ", trim(filepath)
-        print *, "DEBUG: Finished writing solution for iteration ", iteration
     end subroutine solution_io_write_solution
     
     !> Read solution from file

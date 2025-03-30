@@ -119,13 +119,6 @@ contains
         
         ! Check if GPU is available
         this%use_gpu = (omp_get_num_devices() > 0)
-        
-        print *, "Incompressible flow solver initialized with:"
-        print *, "  * Time step: ", this%dt
-        print *, "  * End time: ", this%end_time
-        print *, "  * Max iterations: ", this%max_iterations
-        print *, "  * Pressure correction algorithm: ", trim(p_corr_type)
-        print *, "  * GPU acceleration: ", this%use_gpu
     end subroutine incompressible_flow_solver_init
     
     !> Setup fields for the incompressible flow solver
