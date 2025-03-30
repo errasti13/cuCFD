@@ -2,6 +2,9 @@
 build/
 bin/
 
+# Output directories
+results/
+
 # Fortran module files
 *.mod
 *.smod
