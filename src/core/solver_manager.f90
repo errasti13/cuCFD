@@ -293,12 +293,6 @@ contains
             
             ! Get boundary conditions section
             call config%get_section("boundary_conditions", bc_section)
-            
-            print *, "DEBUG: bc_section associated =", associated(bc_section)
-            if (associated(bc_section)) then
-                do i = 1, bc_section%num_subsections
-                    print *, "  - ", trim(bc_section%subsections(i)%name)
-                end do
                 
                 ! Loop through the walls (north, south, east, west, etc.)
                 do i = 1, bc_section%num_subsections
