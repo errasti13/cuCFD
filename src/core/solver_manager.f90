@@ -61,6 +61,14 @@ module solver_manager
         ! GPU acceleration
         logical :: use_gpu = .false.
         
+        ! Residual tracking
+        logical :: print_residuals = .true.            ! Whether to print residuals
+        integer :: residual_print_frequency = 10       ! How often to print residuals
+        real(WP), allocatable :: residuals(:)          ! Current residuals for each equation
+        real(WP), allocatable :: initial_residuals(:)  ! Initial residuals for scaling
+        real(WP), allocatable :: max_residuals(:)      ! Maximum residuals seen during simulation
+        character(len=20), allocatable :: residual_names(:) ! Names of residuals for output
+        
     contains
         procedure :: init => solver_manager_init
         procedure :: setup_from_config => solver_manager_setup_from_config
@@ -491,6 +499,16 @@ contains
             if (config%has_key("solver.max_iterations")) then
                 this%max_iterations = config%get_integer("solver.max_iterations", this%max_iterations)
             end if
+            
+            ! Residual print frequency (if present)
+            if (config%has_key("solver.residual_print_frequency")) then
+                this%residual_print_frequency = config%get_integer("solver.residual_print_frequency", this%residual_print_frequency)
+            end if
+            
+            ! Print residuals flag (if present)
+            if (config%has_key("solver.print_residuals")) then
+                this%print_residuals = config%get_logical("solver.print_residuals", this%print_residuals)
+            end if
         else
             print *, "No solver section found in config file, using defaults or filename heuristics"
             ! Default values
@@ -533,6 +551,9 @@ contains
         this%max_iterations = ceiling(this%end_time / this%dt)
         print *, "Final max_iterations (based on end_time/dt): ", this%max_iterations
         
+        ! Initialize residual tracking
+        call setup_residual_tracking(this)
+        
         ! Initialize the appropriate solver based on type
         select case (this%solver_type)
             case (SOLVER_TYPE_DIFFUSION)
@@ -572,15 +593,70 @@ contains
         call config%cleanup()
     end subroutine solver_manager_setup_solver
     
+    !> Setup residual tracking based on solver type
+    subroutine setup_residual_tracking(this)
+        class(solver_manager_t), intent(inout) :: this
+        integer :: num_residuals
+        
+        ! Determine number of residuals based on solver type
+        select case (this%solver_type)
+            case (SOLVER_TYPE_DIFFUSION)
+                num_residuals = 1  ! Temperature equation
+            case (SOLVER_TYPE_INCOMPRESSIBLE_FLOW)
+                num_residuals = 4  ! U, V, W momentum equations and pressure equation
+            case default
+                num_residuals = 0
+                return
+        end select
+        
+        ! Allocate arrays for residuals
+        if (allocated(this%residuals)) deallocate(this%residuals)
+        if (allocated(this%initial_residuals)) deallocate(this%initial_residuals)
+        if (allocated(this%max_residuals)) deallocate(this%max_residuals)
+        if (allocated(this%residual_names)) deallocate(this%residual_names)
+        
+        allocate(this%residuals(num_residuals))
+        allocate(this%initial_residuals(num_residuals))
+        allocate(this%max_residuals(num_residuals))
+        allocate(this%residual_names(num_residuals))
+        
+        ! Initialize all residuals to zero
+        this%residuals = 0.0_WP
+        this%initial_residuals = 0.0_WP
+        this%max_residuals = 0.0_WP
+        
+        ! Set residual names based on solver type
+        select case (this%solver_type)
+            case (SOLVER_TYPE_DIFFUSION)
+                this%residual_names(1) = "temperature"
+            case (SOLVER_TYPE_INCOMPRESSIBLE_FLOW)
+                this%residual_names(1) = "Ux"
+                this%residual_names(2) = "Uy"
+                this%residual_names(3) = "Uz"
+                this%residual_names(4) = "p"
+        end select
+        
+        print *, "Initialized residual tracking for", num_residuals, "equations"
+    end subroutine setup_residual_tracking
+    
     !> Advance solution by one time step
     subroutine solver_manager_advance(this)
         class(solver_manager_t), intent(inout) :: this
+        integer :: i
+        real(WP), allocatable :: current_residuals(:)
         
         ! Advance solution based on solver type
         select case (this%solver_type)
             case (SOLVER_TYPE_DIFFUSION)
 #ifdef HAVE_DIFFUSION
+                ! Advance diffusion solver and get residuals
                 call this%diffusion_solver%advance()
+                
+                ! Get residuals if tracking is enabled
+                if (this%print_residuals) then
+                    ! Get temperature equation residual from diffusion solver
+                    this%residuals(1) = this%diffusion_solver%get_residual()
+                end if
 #else
                 print *, "Error: Diffusion solver not available."
                 stop
@@ -588,7 +664,17 @@ contains
                 
             case (SOLVER_TYPE_INCOMPRESSIBLE_FLOW)
 #ifdef HAVE_INCOMPRESSIBLE_FLOW
+                ! Advance flow solver
                 call this%flow_solver%advance()
+                
+                ! Get residuals if tracking is enabled
+                if (this%print_residuals) then
+                    ! Get residuals for each equation from flow solver
+                    allocate(current_residuals(4))
+                    call this%flow_solver%get_residuals(current_residuals)
+                    this%residuals = current_residuals
+                    deallocate(current_residuals)
+                end if
 #else
                 print *, "Error: Incompressible flow solver not available."
                 stop
@@ -598,6 +684,23 @@ contains
                 print *, "Error: Unknown solver type. Cannot advance solution."
         end select
         
+        ! Store initial residuals on first iteration
+        if (this%current_iteration == 0 .and. this%print_residuals) then
+            this%initial_residuals = this%residuals
+        end if
+        
+        ! Store maximum residuals
+        if (this%print_residuals) then
+            do i = 1, size(this%residuals)
+                this%max_residuals(i) = max(this%max_residuals(i), this%residuals(i))
+            end do
+        end if
+        
+        ! Print residuals if needed
+        if (this%print_residuals .and. mod(this%current_iteration, this%residual_print_frequency) == 0) then
+            call print_residuals(this)
+        end if
+        
         ! Update simulation state
         this%current_iteration = this%current_iteration + 1
         this%current_time = this%current_time + this%dt
@@ -605,8 +708,47 @@ contains
         ! Check if simulation is finished
         if (this%current_time >= this%end_time .or. this%current_iteration >= this%max_iterations) then
             this%simulation_finished = .true.
+            
+            ! Print final residuals
+            if (this%print_residuals) then
+                print *, "===== Final residuals ====="
+                call print_residuals(this)
+            end if
         end if
     end subroutine solver_manager_advance
+    
+    !> Print current residuals
+    subroutine print_residuals(this)
+        class(solver_manager_t), intent(in) :: this
+        integer :: i
+        real(WP) :: scaled_residual
+        
+        ! Header
+        if (this%current_iteration == 0) then
+            print *, "Iteration |   Time   |   Equation   |   Residual   | Scaled Residual"
+            print *, "---------+---------+--------------+-------------+----------------"
+        end if
+        
+        ! Print each residual
+        do i = 1, size(this%residuals)
+            ! Calculate scaled residual (relative to initial residual)
+            if (this%initial_residuals(i) > tiny(1.0_WP)) then
+                scaled_residual = this%residuals(i) / this%initial_residuals(i)
+            else
+                scaled_residual = this%residuals(i)
+            end if
+            
+            ! Print formatted output
+            print '(I8, " | ", F8.4, " | ", A12, " | ", ES12.4, " | ", ES12.4)', &
+                  this%current_iteration, this%current_time, &
+                  trim(this%residual_names(i)), this%residuals(i), scaled_residual
+        end do
+        
+        ! Separator line
+        if (size(this%residuals) > 0) then
+            print *, "---------+---------+--------------+-------------+----------------"
+        end if
+    end subroutine print_residuals
     
     !> Write solution to file
     subroutine solver_manager_write_solution(this, solution_io)
