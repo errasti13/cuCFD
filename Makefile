@@ -22,7 +22,7 @@ ifeq ($(USE_GPU), yes)
     FINAL_LDFLAGS := $(GPU_LDFLAGS)
     BUILD_MODE_MSG := "Building for GPU (arch: $(GPU_ARCH))"
 else
-    CPU_FFLAGS := $(BASE_FFLAGS) $(MODULE_FLAGS) # Add CPU-specific flags like -mp=multicore if desired later
+    CPU_FFLAGS := $(BASE_FFLAGS) $(MODULE_FLAGS) -DCPU_ONLY # Disables CUDA
     CPU_LDFLAGS := # Add CPU-specific linker flags if needed later
     FINAL_FFLAGS := $(CPU_FFLAGS)
     FINAL_LDFLAGS := $(CPU_LDFLAGS)
