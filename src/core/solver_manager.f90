@@ -460,17 +460,25 @@ contains
         ! Load configuration
         call config%load(config_file)
         
-        ! Set solver parameters
-        this%dt = 0.001_WP  ! Default time step
-        this%end_time = 1.0_WP  ! Default end time
-        this%max_iterations = 1000  ! Default max iterations
-        
         ! Override with values from config
         if (config%has_section("solver")) then
             
             ! Time step
             if (config%has_key("solver.time_step")) then
                 this%dt = config%get_real("solver.time_step", this%dt)
+            else
+                print *, "No time step found in config file, using default"
+                print *, "Will try to compute from final time and number of iterations"
+
+                ! Compute time step from final time and number of iterations
+                if (config%has_key("solver.end_time") .and. config%has_key("solver.max_iterations")) then
+                    this%end_time = config%get_real("solver.end_time", this%end_time)
+                    this%max_iterations = config%get_integer("solver.max_iterations", this%max_iterations)
+                    this%dt = this%end_time / this%max_iterations
+                else
+                    print *, "No end time or max iterations found in config file, exit..."
+                    stop
+                end if
             end if
             
             ! End time
