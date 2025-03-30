@@ -1,14 +1,14 @@
-# cuCFD: CUDA-accelerated Computational Fluid Dynamics Solver
+# cuCFD - CUDA-accelerated Computational Fluid Dynamics Solver
 
-A high-performance CFD solver using Fortran with GPU acceleration via OpenMP and CUDA.
+A GPU-accelerated CFD solver written in modern Fortran with CUDA/OpenMP target offload.
 
 ## Features
 
-- Finite Volume discretization schemes
-- CUDA and OpenMP acceleration for massively parallel execution
-- Multi-device support for scalability
-- Built-in performance benchmarking (CPU vs GPU)
-- Modular design for extensibility
+- GPU acceleration using CUDA via OpenMP target offload for parallel computations
+- Conditional CPU/GPU build capability
+- Heat conduction solver with boundary conditions
+- Solution I/O for saving and loading simulation results
+- Paraview-compatible VTK export for visualization
 
 ## Project Structure
 
@@ -59,58 +59,79 @@ cuCFD/
 
 ## Building
 
-Different build configurations are available:
+### Requirements
 
+- NVIDIA HPC SDK (nvfortran compiler) with CUDA
+- NVIDIA GPU with compute capability 7.0 or higher (Volta/Turing/Ampere/Hopper)
+
+### Compilation
+
+Build with GPU support (default):
 ```bash
-# Default build with CUDA acceleration
 make
-
-# Debug build with bounds checking
-make debug
-
-# Release build with optimizations
-make release
-
-# Clean build files
-make clean
-
-# Build for specific GPU architectures
-make tesla  # For Tesla GPUs (cc75)
-make volta  # For Volta GPUs (cc70)
-make ampere # For Ampere GPUs (cc80)
 ```
 
-## Performance Optimization
-
-This CFD solver is optimized for high performance:
-- GPU-accelerated core algorithms with OpenMP offloading
-- Memory access patterns optimized for GPU coalescing
-- Efficient parallel data structures
-- Block-based computation for cache efficiency
-- Mixed-precision computation where appropriate
-- Multi-device support for larger problems
-
-## Getting Started
-
+Build for CPU only:
 ```bash
-# Clone the repository
-git clone https://github.com/yourusername/cuCFD.git
-cd cuCFD
-
-# Build the project
-make release
-
-# Run a test case
-./bin/cuCFD examples/2d_cavity/cavity.config
+make USE_GPU=no
 ```
 
-## Requirements
+Build for specific GPU architecture:
+```bash
+make tesla     # For Tesla V100 (cc70) or T4 (cc75)
+make volta     # For Volta (cc70)
+make turing    # For Turing (cc75)
+make ampere    # For Ampere (cc80)
+```
 
-- NVIDIA HPC SDK (including nvfortran compiler)
-- CUDA-capable GPU
-- OpenMP support
-- Make utility
+Build in debug mode:
+```bash
+make debug
+```
+
+## Running Simulations
+
+Run the application with a configuration file:
+```bash
+./bin/cuCFD examples/2d_cavity/lid_driven_cavity.config
+```
+
+Example configuration files are provided in the `examples/` directory.
+
+## Solution I/O
+
+cuCFD can save simulation results to binary files and convert them to Paraview-compatible formats.
+
+### Writing Solution Files
+
+Solution writing is controlled via configuration files:
+```
+output_dir: results/my_simulation
+output_frequency: 10  # Write every 10 time steps
+write_solution: true  # Enable solution writing
+```
+
+### Converting Solution Files for Visualization
+
+Use the solution converter to transform binary solution files to VTK format:
+```bash
+./bin/solution_converter results/my_simulation/solution_000100.bin -o temperature.vtk
+```
+
+Options:
+- `-o, --output FILE` - Specify output file name
+- `-d, --dir DIRECTORY` - Specify output directory
+- `-f, --format FORMAT` - Specify output format (vtk or vtu, default: vtk)
+
+## Examples
+
+Heat conduction example:
+```bash
+./bin/cuCFD examples/heat_conduction/heat_solution_config.txt
+```
+
+This will simulate heat transfer and save solution files that can be converted to VTK format for visualization.
 
 ## License
 
-This project is open-source and available under the MIT License.
+This project is open source and licensed under the MIT License.
