@@ -286,18 +286,21 @@ contains
             ! Get boundary conditions section
             call config%get_section("boundary_conditions", bc_section)
             
+            print *, "DEBUG: bc_section associated =", associated(bc_section)
             if (associated(bc_section)) then
-                print *, "Found boundary conditions in config file:"
+                do i = 1, bc_section%num_subsections
+                    print *, "  - ", trim(bc_section%subsections(i)%name)
+                end do
                 
                 ! Loop through the walls (north, south, east, west, etc.)
                 do i = 1, bc_section%num_subsections
-                    print *, "Processing boundary condition section: ", i
                     wall_name = bc_section%subsections(i)%name
                     bc_type = ""
                     velocity = [0.0_WP, 0.0_WP, 0.0_WP]
                     
                     ! Get properties for this wall
                     do j = 1, bc_section%subsections(i)%num_items
+                        
                         if (trim(bc_section%subsections(i)%keys(j)) == "type") then
                             bc_type = trim(bc_section%subsections(i)%values(j))
                         end if
@@ -308,8 +311,6 @@ contains
                             read(velocity_str(2:len_trim(velocity_str)-1), *) velocity
                         end if
                     end do
-                    
-                    print *, "Wall: ", trim(wall_name), " Type: ", trim(bc_type), " Velocity: ", velocity
                     
                     ! Map wall name to index
                     if (trim(wall_name) == "north") then
@@ -484,11 +485,6 @@ contains
             ! End time
             if (config%has_key("solver.end_time")) then
                 this%end_time = config%get_real("solver.end_time", this%end_time)
-            end if
-            
-            ! Solver type
-            if (config%has_key("solver.type")) then
-                this%solver_type = config%get_integer("solver.type", this%solver_type)
             end if
             
             ! Max iterations (if present)
